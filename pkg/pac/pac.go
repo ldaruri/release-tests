@@ -24,5 +24,5 @@ func VerifyPipelinesAsCodeEnable(cs *clients.Clients, section, inputField, enabl
 	}
 
 	// Return a message indicating the status change
-	return fmt.Sprintf("PipelinesAsCode enable status has been set to %s", enable), nil
+	return fmt.Sprintf("auto-configure-new-github-repo PipelinesAsCode enable status has been set to %s", enable), nil
 }
