@@ -208,7 +208,7 @@ func VerifyServiceAccountExists(ctx context.Context, kc *clients.KubeClient, sa,
 	}
 }
 
-func VerifyNamespaceExists(ctx context.Context, kc *clients.KubeClient, ns string){
+func VerifyNamespaceExists(ctx context.Context, kc *clients.KubeClient, ns string) {
 	log.Printf("Verify namespace %q exists", ns)
 	if err := wait.PollImmediate(config.APIRetry, config.APITimeout, func() (bool, error) {
 		_, err := kc.Kube.CoreV1().Namespaces().Get(ctx, ns, metav1.GetOptions{})
@@ -465,4 +465,17 @@ func ValidateTektonInstallersetNames(c *clients.Clients) {
 	if len(missingInstallersets) > 0 {
 		testsuit.T.Fail(fmt.Errorf("Installersets with prefix %s is not found", strings.Join(missingInstallersets, ",")))
 	}
+}
+
+func GetWarningEvents(c *clients.Clients, namespace string) (string, error) {
+	var eventString string
+	var eventSlice []string
+	events, err := c.KubeClient.Kube.CoreV1().Events(namespace).List(c.Ctx, metav1.ListOptions{FieldSelector: "type=Warning"})
+	if err != nil {
+		return eventString, err
+	}
+	for _, item := range events.Items {
+		eventSlice = append(eventSlice, item.Message)
+	}
+	return strings.Join(eventSlice, "\n"), nil
 }

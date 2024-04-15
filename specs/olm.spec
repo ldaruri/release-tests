@@ -26,8 +26,10 @@ Steps:
     | 1    | testdata/pvc/tekton-logs.yaml  |
     | 2    | testdata/results/result.yaml   | 
   * Create Results route
+  * Create signing-secrets for Tekton Chains
   * Configure GitHub token for git resolver in TektonConfig
   * Configure the bundles resolver
+  * Enable console plugin
   * Validate pipelines deployment
   * Validate triggers deployment
   * Validate PAC deployment
@@ -68,5 +70,4 @@ Importance: Critical
 
 Uninstalls `openshift-pipelines` operator using olm
 Steps:
-  * Validate Operator should be installed
   * Uninstall Operator

@@ -1,7 +1,9 @@
 package oc
 
 import (
+	"encoding/json"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/getgauge-contrib/gauge-go/testsuit"
@@ -96,6 +98,10 @@ func DeleteResource(resourceType, name string) {
 	log.Printf("output: %s\n", cmd.MustSucceed("oc", "delete", resourceType, name, "-n", store.Namespace()).Stdout())
 }
 
+func DeleteResourceInNamespace(resourceType, name, namespace string) {
+	log.Printf("output: %s\n", cmd.MustSucceed("oc", "delete", resourceType, name, "-n", namespace).Stdout())
+}
+
 func CheckProjectExists(projectName string) bool {
 	return !strings.Contains(cmd.Run("oc", "project", projectName).String(), "error")
 }
@@ -106,4 +112,36 @@ func SecretExists(secretName string, namespace string) bool {
 
 func CreateSecretForGitResolver(secretData string) {
 	cmd.MustSucceed("oc", "create", "secret", "generic", "github-auth-secret", "--from-literal", "github-auth-key="+secretData, "-n", "openshift-pipelines")
+}
+
+func EnableConsolePlugin() {
+	json_output := cmd.MustSucceed("oc", "get", "consoles.operator.openshift.io", "cluster", "-o", "jsonpath={.spec.plugins}").Stdout()
+	log.Printf("Already enabled console plugins: %s", json_output)
+	var plugins []string
+
+	if len(json_output) > 0 {
+		err := json.Unmarshal([]byte(json_output), &plugins)
+
+		if err != nil {
+			testsuit.T.Errorf("Could not parse consoles.operator.openshift.io CR: %v", err)
+		}
+
+		if slices.Contains(plugins, config.ConsolePluginDeployment) {
+			log.Printf("Pipelines console plugin is already enabled.")
+			return
+		}
+	}
+
+	plugins = append(plugins, config.ConsolePluginDeployment)
+
+	patch_data := "{\"spec\":{\"plugins\":[\"" + strings.Join(plugins, "\",\"") + "\"]}}"
+	cmd.MustSucceed("oc", "patch", "consoles.operator.openshift.io", "cluster", "-p", patch_data, "--type=merge").Stdout()
+}
+
+func GetSecretsData(secretName, namespace string) string {
+	return cmd.MustSucceed("oc", "get", "secrets", secretName, "-n", namespace, "-o", "jsonpath=\"{.data}\"").Stdout()
+}
+
+func CreateChainsImageRegistrySecret(dockerConfig string) {
+	cmd.MustSucceed("oc", "create", "secret", "generic", "chains-image-registry-credentials", "--from-literal=.dockerconfigjson="+dockerConfig, "--from-literal=config.json="+dockerConfig, "--type=kubernetes.io/dockerconfigjson")
 }
