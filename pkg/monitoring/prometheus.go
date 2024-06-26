@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openshift-pipelines/release-tests/pkg/clients"
+	"github.com/openshift-pipelines/release-tests/pkg/cmd"
 	"github.com/openshift-pipelines/release-tests/pkg/config"
 
 	v1 "github.com/openshift/api/route/v1"
@@ -77,8 +78,7 @@ func VerifyHealthStatusMetric(cs *clients.Clients, targetService TargetService) 
 	if err != nil {
 		return err
 	}
-
-	if err := wait.PollImmediate(config.APIRetry, config.APITimeout, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(cs.Ctx, config.APIRetry, config.APITimeout, true, func(context.Context) (bool, error) {
 		value, _, err := pc.Query(context.Background(), fmt.Sprintf(`max(up{job="%s"})`, targetService.Job), time.Time{})
 		if err != nil {
 			return false, err
@@ -125,7 +125,7 @@ func VerifyPipelinesControlPlaneMetrics(cs *clients.Clients) error {
 		"tekton_taskruns_pod_latency",
 	}
 	for _, metric := range pipelineMetrics {
-		if err := wait.PollImmediate(config.APIRetry, config.APITimeout, func() (bool, error) {
+		if err := wait.PollUntilContextTimeout(cs.Ctx, config.APIRetry, config.APITimeout, true, func(context.Context) (bool, error) {
 			value, _, err := pc.Query(context.Background(), metric, time.Time{})
 			if err != nil {
 				return false, err
@@ -146,7 +146,19 @@ func getBearerTokenForPrometheusAccount(cs *clients.Clients) (string, error) {
 	}
 	tokenSecret := getPrometheusSecretNameForToken(secrets.Items)
 	if tokenSecret == "" {
-		return "", errors.New("token secret with prefix \"prometheus-k8s\" service account not found")
+		// generate token for service account prometheus-k8s
+		output := cmd.Run("oc", "sa", "new-token", "prometheus-k8s", "-n", "openshift-monitoring")
+		if output.ExitCode != 0 {
+			return "", fmt.Errorf("error creating token for the service account prometheus-k8s: %v", output.Stderr())
+		}
+		secrets, err := cs.KubeClient.Kube.CoreV1().Secrets("openshift-monitoring").List(context.Background(), meta.ListOptions{})
+		if err != nil {
+			return "", fmt.Errorf("error getting secrets from namespace %v: %v", "openshift-monitoring", err)
+		}
+		tokenSecret = getPrometheusSecretNameForToken(secrets.Items)
+		if tokenSecret == "" {
+			return "", errors.New("could not find a service account token for service account \"prometheus-k8s\"")
+		}
 	}
 	sec, err := cs.KubeClient.Kube.CoreV1().Secrets("openshift-monitoring").Get(context.Background(), tokenSecret, meta.GetOptions{})
 	if err != nil {

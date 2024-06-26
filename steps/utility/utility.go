@@ -1,12 +1,16 @@
 package utility
 
 import (
+	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/getgauge-contrib/gauge-go/gauge"
 	"github.com/getgauge-contrib/gauge-go/testsuit"
+	"github.com/openshift-pipelines/release-tests/pkg/cmd"
+	"github.com/openshift-pipelines/release-tests/pkg/k8s"
 	"github.com/openshift-pipelines/release-tests/pkg/store"
 )
 
@@ -36,4 +40,18 @@ var _ = gauge.Step("Assert if values stored in variable <variable1> and variable
 var _ = gauge.Step("Switch to project <projectName>", func(projectName string) {
 	store.Clients().NewClientSet(projectName)
 	gauge.GetScenarioStore()["namespace"] = projectName
+})
+
+var _ = gauge.Step("Validate route url for pipelines tutorial", func() {
+	expectedOutput := "Cat 🐺 vs Dog 🐶"
+	routeUrl := store.GetScenarioData("routeurl")
+	output := cmd.MustSucceed("lynx", routeUrl, "--dump").Stdout()
+	log.Println(output)
+	if !strings.Contains(output, expectedOutput) {
+		testsuit.T.Fail(fmt.Errorf("expected:\n%v,\ngot:\n%v", expectedOutput, output))
+	}
+})
+
+var _ = gauge.Step("Wait for pipelines-vote-ui deployment", func() {
+	k8s.ValidateDeployments(store.Clients(), store.Namespace(), "pipelines-vote-ui")
 })

@@ -45,7 +45,7 @@ var publicKeyPath = resource.Path("testdata/chains/key")
 
 func EnsureTektonChainsExists(clients chainv1alpha.TektonChainInterface, names utils.ResourceNames) (*v1alpha1.TektonChain, error) {
 	ks, err := clients.Get(context.TODO(), names.TektonChain, metav1.GetOptions{})
-	err = wait.Poll(config.APIRetry, config.APITimeout, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(context.TODO(), config.APIRetry, config.APITimeout, false, func(context.Context) (bool, error) {
 		ks, err = clients.Get(context.TODO(), names.TektonChain, metav1.GetOptions{})
 		if err != nil {
 			if apierrs.IsNotFound(err) {
@@ -64,10 +64,22 @@ func VerifySignature(resourceType string) {
 	resourceUID := cmd.MustSucceed("tkn", resourceType, "describe", "--last", "-o", "jsonpath='{.metadata.uid}'").Stdout()
 	resourceUID = strings.Trim(resourceUID, "'")
 	jsonpath := fmt.Sprintf("jsonpath=\"{.metadata.annotations.chains\\.tekton\\.dev/signature-%s-%s}\"", resourceType, resourceUID)
-	fmt.Println("Waiting 30 seconds")
+	log.Println("Waiting 30 seconds")
 	cmd.MustSuccedIncreasedTimeout(time.Second*45, "sleep", "30")
 	signature := cmd.MustSucceed("tkn", resourceType, "describe", "--last", "-o", jsonpath).Stdout()
 	signature = strings.Trim(signature, "\"")
+
+	jsonpath = "jsonpath=\"{.metadata.annotations.chains\\.tekton\\.dev/signed}\""
+	isSigned := cmd.MustSucceed("tkn", resourceType, "describe", "--last", "-o", jsonpath).Stdout()
+	isSigned = strings.Trim(isSigned, "\"")
+
+	if isSigned != "true" {
+		testsuit.T.Errorf("Annotation chains.tekton.dev/signed is set to %s", isSigned)
+	}
+	if len(signature) == 0 {
+		testsuit.T.Fail(fmt.Errorf("Annotation chains.tekton.dev/signature-%s-%s is not set", resourceType, resourceUID))
+	}
+
 	//Decode the signature
 	decodedSignature, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
@@ -92,7 +104,7 @@ func StartKanikoTask() {
 	cmd.MustSucceed("oc", "secrets", "link", "pipeline", "chains-image-registry-credentials", "--for=pull,mount")
 	image := fmt.Sprintf("IMAGE=%s:%s", repo, tag)
 	cmd.MustSucceed("tkn", "task", "start", "--param", image, "--use-param-defaults", "--workspace", "name=source,claimName=chains-pvc", "--workspace", "name=dockerconfig,secret=chains-image-registry-credentials", "kaniko-chains")
-	fmt.Println("Waiting 2 minutes for images to appear in image registry")
+	log.Println("Waiting 2 minutes for images to appear in image registry")
 	cmd.MustSuccedIncreasedTimeout(time.Second*130, "sleep", "120")
 }
 
@@ -183,10 +195,8 @@ func CreateSigningSecretForTektonChains() {
 	if chainsPublicKey != "" && chainsPrivateKey != "" && chainsPassword != "" {
 		chainsPassword = os.Getenv("COSIGN_PASSWORD")
 		cmd.MustSucceed("oc", "create", "secret", "generic", "signing-secrets", "--from-literal=cosign.key="+chainsPrivateKey, "--from-literal=cosign.password="+chainsPassword, "--from-literal=cosign.pub="+chainsPublicKey, "--namespace", "openshift-pipelines")
-		CreateFileWithCosignPubKey()
 	} else {
 		os.Setenv("COSIGN_PASSWORD", "chainstest")
 		cmd.MustSucceed("cosign", "generate-key-pair", "k8s://openshift-pipelines/signing-secrets")
-		CreateFileWithCosignPubKey()
 	}
 }

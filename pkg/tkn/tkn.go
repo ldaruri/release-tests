@@ -41,9 +41,13 @@ func AssertComponentVersion(version string, component string) {
 		actualVersion = cmd.MustSucceed("oc", "get", "tektonhub", "hub", "-o", "jsonpath={.status.version}").Stdout()
 	case "results":
 		actualVersion = cmd.MustSucceed("oc", "get", "tektonresult", "result", "-o", "jsonpath={.status.version}").Stdout()
+	case "manual-approval-gate":
+		actualVersion = cmd.MustSucceed("oc", "get", "manualapprovalgate", "manual-approval-gate", "-o", "jsonpath={.status.version}").Stdout()
 	default:
 		testsuit.T.Errorf("Unknown component")
 	}
+
+	actualVersion = strings.Trim(actualVersion, "\n")
 	if !strings.Contains(actualVersion, version) {
 		testsuit.T.Errorf("The " + component + " has an unexpected version: " + actualVersion + ", expected: " + version)
 	}
@@ -72,7 +76,7 @@ func AssertClientVersion(binary string) {
 		expectedVersion := os.Getenv("TKN_CLIENT_VERSION")
 		commandResult = cmd.MustSucceed("/tmp/tkn", "version").Stdout()
 		var splittedCommandResult = strings.Split(commandResult, "\n")
-		for i, _ := range splittedCommandResult {
+		for i := range splittedCommandResult {
 			if strings.Contains(splittedCommandResult[i], "Client") {
 				if !strings.Contains(splittedCommandResult[i], expectedVersion) {
 					unexpectedVersion = splittedCommandResult[i]
@@ -151,9 +155,7 @@ func StartPipeline(pipelineName string, params map[string]string, workspaces map
 	for key, value := range workspaces {
 		commandArgs = append(commandArgs, fmt.Sprintf("-w %s,%s", key, value))
 	}
-	for _, arg := range args {
-		commandArgs = append(commandArgs, arg)
-	}
+	commandArgs = append(commandArgs, args...)
 	commandArgs = strings.Split(strings.Join(commandArgs, " "), " ")
 	pipelineRunName := strings.Trim(cmd.MustSucceed(commandArgs...).Stdout(), "\n")
 	log.Printf("Pipelinerun %s started", pipelineRunName)

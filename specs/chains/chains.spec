@@ -13,6 +13,7 @@ Importance: Critical
 
 Steps: 
     * Update the TektonConfig with taskrun format as "in-toto" taskrun storage as "tekton" oci storage as "" transparency mode as "false"
+    * Store Cosign public key in file
     * Apply
      | S.NO | resource_dir                          |
      |------|---------------------------------------|
@@ -26,7 +27,9 @@ Level: Integration
 Type: Functional
 Importance: Critical
 Steps:
+    * Verify ServiceAccount "pipeline" exist
     * Update the TektonConfig with taskrun format as "in-toto" taskrun storage as "oci" oci storage as "oci" transparency mode as "true"
+    * Store Cosign public key in file
     * Verify that image registry variable is exported
     * Create secret with image registry credentials for SA
     * Apply

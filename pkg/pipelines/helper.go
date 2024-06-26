@@ -4,53 +4,19 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/getgauge-contrib/gauge-go/testsuit"
 	"github.com/openshift-pipelines/release-tests/pkg/clients"
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// collectMatchingEvents collects list of events under 5 seconds that match
-// 1. matchKinds which is a map of Kind of Object with name of objects
-// 2. reason which is the expected reason of event
-func collectMatchingEvents(c *clients.Clients, namespace string, kinds map[string][]string, reason string) ([]*corev1.Event, error) {
-	var events []*corev1.Event
-
-	watchEvents, err := c.KubeClient.Kube.CoreV1().Events(namespace).Watch(c.Ctx, metav1.ListOptions{})
-	// close watchEvents channel
-	defer watchEvents.Stop()
-	if err != nil {
-		return events, err
-	}
-
-	// create timer to not wait for events longer than 5 seconds
-	timer := time.NewTimer(5 * time.Second)
-
-	for {
-		select {
-		case wevent := <-watchEvents.ResultChan():
-			event := wevent.Object.(*corev1.Event)
-			if val, ok := kinds[event.InvolvedObject.Kind]; ok {
-				for _, expectedName := range val {
-					if event.InvolvedObject.Name == expectedName && event.Reason == reason {
-						events = append(events, event)
-					}
-				}
-			}
-		case <-timer.C:
-			return events, nil
-		}
-	}
-}
-
 // checkLabelPropagation checks that labels are correctly propagating from
 // Pipelines, PipelineRuns, and Tasks to TaskRuns and Pods.
-func checkLabelPropagation(c *clients.Clients, namespace string, pipelineRunName string, tr *v1beta1.TaskRun) {
+func checkLabelPropagation(c *clients.Clients, namespace string, pipelineRunName string, tr *v1.TaskRun) {
 	// Our controllers add 4 labels automatically. If custom labels are set on
 	// the Pipeline, PipelineRun, or Task then the map will have to be resized.
 	labels := make(map[string]string, 4)
@@ -109,7 +75,7 @@ func checkLabelPropagation(c *clients.Clients, namespace string, pipelineRunName
 
 // checkAnnotationPropagation checks that annotations are correctly propagating from
 // Pipelines, PipelineRuns, and Tasks to TaskRuns and Pods.
-func checkAnnotationPropagation(c *clients.Clients, namespace string, pipelineRunName string, tr *v1beta1.TaskRun) {
+func checkAnnotationPropagation(c *clients.Clients, namespace string, pipelineRunName string, tr *v1.TaskRun) {
 	annotations := make(map[string]string)
 
 	// Check annotation propagation to PipelineRuns.
@@ -151,7 +117,7 @@ func checkAnnotationPropagation(c *clients.Clients, namespace string, pipelineRu
 	AssertAnnotationsMatch(annotations, pod.ObjectMeta.Annotations)
 }
 
-func GetPodForTaskRun(c *clients.Clients, namespace string, tr *v1beta1.TaskRun) *corev1.Pod {
+func GetPodForTaskRun(c *clients.Clients, namespace string, tr *v1.TaskRun) *corev1.Pod {
 	// The Pod name has a random suffix, so we filter by label to find the one we care about.
 	pods, err := c.KubeClient.Kube.CoreV1().Pods(namespace).List(c.Ctx, metav1.ListOptions{
 		LabelSelector: pipeline.TaskRunLabelKey + " = " + tr.Name,
@@ -182,8 +148,8 @@ func AssertAnnotationsMatch(expectedAnnotations, actualAnnotations map[string]st
 	}
 }
 
-func Cast2pipelinerun(obj runtime.Object) (*v1beta1.PipelineRun, error) {
-	var run *v1beta1.PipelineRun
+func Cast2pipelinerun(obj runtime.Object) (*v1.PipelineRun, error) {
+	var run *v1.PipelineRun
 	unstruct, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
 		return nil, err

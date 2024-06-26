@@ -2,6 +2,7 @@ package pipelines
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -20,7 +21,8 @@ import (
 	"github.com/tektoncd/cli/pkg/cli"
 	clipr "github.com/tektoncd/cli/pkg/cmd/pipelinerun"
 	"github.com/tektoncd/cli/pkg/options"
-	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
+	prsort "github.com/tektoncd/cli/pkg/pipelinerun/sort"
+	v1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -142,7 +144,7 @@ func validatePipelineRunTimeoutFailure(c *clients.Clients, prname, namespace str
 	}
 
 	log.Printf("Waiting for PipelineRun %s in namespace %s to be timed out", pipelineRun.Name, namespace)
-	if err := wait.WaitForPipelineRunState(c, pipelineRun.Name, wait.FailedWithReason(v1beta1.PipelineRunReasonTimedOut.String(), pipelineRun.Name), "PipelineRunTimedOut"); err != nil {
+	if err := wait.WaitForPipelineRunState(c, pipelineRun.Name, wait.FailedWithReason(v1.PipelineRunReasonTimedOut.String(), pipelineRun.Name), "PipelineRunTimedOut"); err != nil {
 		testsuit.T.Errorf("Error waiting for PipelineRun %s to finish: %s", pipelineRun.Name, err)
 	}
 
@@ -152,7 +154,7 @@ func validatePipelineRunTimeoutFailure(c *clients.Clients, prname, namespace str
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			err := wait.WaitForTaskRunState(c, name, wait.FailedWithReason(v1beta1.TaskRunReasonCancelled.String(), name), v1beta1.TaskRunReasonCancelled.String())
+			err := wait.WaitForTaskRunState(c, name, wait.FailedWithReason(v1.TaskRunReasonCancelled.String(), name), v1.TaskRunReasonCancelled.String())
 			if err != nil {
 				testsuit.T.Errorf("error waiting for task run %s to be cancelled on pipeline timeout \n %v", name, err)
 			}
@@ -190,7 +192,7 @@ func validatePipelineRunCancel(c *clients.Clients, prname, namespace string) {
 		wg.Add(1)
 		go func(name string) {
 			defer wg.Done()
-			err := wait.WaitForTaskRunState(c, name, wait.FailedWithReason(v1beta1.TaskRunReasonCancelled.String(), name), "TaskRunCancelled")
+			err := wait.WaitForTaskRunState(c, name, wait.FailedWithReason(v1.TaskRunReasonCancelled.String(), name), "TaskRunCancelled")
 			if err != nil {
 				testsuit.T.Errorf("task run %s failed to finish \n %v", name, err)
 			}
@@ -252,8 +254,8 @@ func WatchForPipelineRun(c *clients.Clients, namespace string) {
 	gauge.WriteMessage("%+v", prnames)
 }
 
-func cast2pipelinerun(obj runtime.Object) (*v1beta1.PipelineRun, error) {
-	var run *v1beta1.PipelineRun
+func cast2pipelinerun(obj runtime.Object) (*v1.PipelineRun, error) {
+	var run *v1.PipelineRun
 	unstruct, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
 		return nil, err
@@ -289,7 +291,7 @@ func AssertForNoNewPipelineRunCreation(c *clients.Clients, namespace string) {
 func AssertNumberOfPipelineruns(c *clients.Clients, namespace, numberOfPr, timeoutSeconds string) {
 	log.Printf("Verifying if %s number of pipelinerun are present", numberOfPr)
 	timeoutSecondsInt, _ := strconv.Atoi(timeoutSeconds)
-	err := w.Poll(config.APIRetry, time.Second*time.Duration(timeoutSecondsInt), func() (bool, error) {
+	err := w.PollUntilContextTimeout(c.Ctx, config.APIRetry, time.Second*time.Duration(timeoutSecondsInt), false, func(context.Context) (bool, error) {
 		prlist, err := c.PipelineRunClient.List(c.Ctx, metav1.ListOptions{})
 		numberOfPrInt, _ := strconv.Atoi(numberOfPr)
 		if len(prlist.Items) == numberOfPrInt {
@@ -306,7 +308,7 @@ func AssertNumberOfPipelineruns(c *clients.Clients, namespace, numberOfPr, timeo
 func AssertNumberOfTaskruns(c *clients.Clients, namespace, numberOfTr, timeoutSeconds string) {
 	log.Printf("Verifying if %s number of taskruns are present", numberOfTr)
 	timeoutSecondsInt, _ := strconv.Atoi(timeoutSeconds)
-	err := w.Poll(config.APIRetry, time.Second*time.Duration(timeoutSecondsInt), func() (bool, error) {
+	err := w.PollUntilContextTimeout(c.Ctx, config.APIRetry, time.Second*time.Duration(timeoutSecondsInt), false, func(context.Context) (bool, error) {
 		trlist, err := c.TaskRunClient.List(c.Ctx, metav1.ListOptions{})
 		numberOfPrInt, _ := strconv.Atoi(numberOfTr)
 		if len(trlist.Items) == numberOfPrInt {
@@ -328,7 +330,7 @@ func AssertPipelinesPresent(c *clients.Clients, namespace string) {
 		expectedNumberOfPipelines *= 3
 	}
 
-	err := w.Poll(config.APIRetry, config.ResourceTimeout, func() (bool, error) {
+	err := w.PollUntilContextTimeout(c.Ctx, config.APIRetry, config.ResourceTimeout, false, func(context.Context) (bool, error) {
 		log.Printf("Verifying that %v pipelines are present in namespace %v", expectedNumberOfPipelines, namespace)
 		p, _ := pclient.List(c.Ctx, metav1.ListOptions{})
 		if len(p.Items) == expectedNumberOfPipelines {
@@ -345,7 +347,7 @@ func AssertPipelinesPresent(c *clients.Clients, namespace string) {
 
 func AssertPipelinesNotPresent(c *clients.Clients, namespace string) {
 	pclient := c.Tekton.TektonV1beta1().Pipelines(namespace)
-	err := w.Poll(config.APIRetry, config.ResourceTimeout, func() (bool, error) {
+	err := w.PollUntilContextTimeout(c.Ctx, config.APIRetry, config.ResourceTimeout, false, func(context.Context) (bool, error) {
 		log.Printf("Verifying if 0 pipelines are not present in namespace %v", namespace)
 		p, _ := pclient.List(c.Ctx, metav1.ListOptions{})
 		if len(p.Items) == 0 {
@@ -365,7 +367,11 @@ func getPipelinerunLogs(c *clients.Clients, prname, namespace string) (*bytes.Bu
 
 	// Set params
 	params := cli.TektonParams{}
-	params.Clients(c.KubeConfig)
+	_, err := params.Clients(c.KubeConfig)
+	if err != nil {
+		log.Printf("Client Initialization Failed\n %v", err)
+		return nil, err
+	}
 	params.SetNamespace(namespace)
 
 	// Set options for the CLI
@@ -381,6 +387,19 @@ func getPipelinerunLogs(c *clients.Clients, prname, namespace string) (*bytes.Bu
 	}
 
 	// Get the logs
-	err := clipr.Run(&lopts)
+	err = clipr.Run(&lopts)
 	return buf, err
+}
+
+func GetLatestPipelinerun(c *clients.Clients, namespace string) (string, error) {
+	prs, err := c.PipelineRunClient.List(c.Ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+	if len(prs.Items) == 0 {
+		return "", fmt.Errorf("no pipelineruns found in the namespace %s", namespace)
+	}
+	prsort.SortByStartTime(prs.Items)
+	return prs.Items[0].Name, nil
+
 }

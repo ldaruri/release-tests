@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/getgauge-contrib/gauge-go/gauge"
 	m "github.com/getgauge-contrib/gauge-go/models"
+	"github.com/getgauge-contrib/gauge-go/testsuit"
 	"github.com/openshift-pipelines/release-tests/pkg/oc"
+	"github.com/openshift-pipelines/release-tests/pkg/openshift"
 	"github.com/openshift-pipelines/release-tests/pkg/store"
 )
 
@@ -16,6 +20,20 @@ var _ = gauge.Step("Create <table>", func(table *m.Table) {
 	for _, row := range table.Rows {
 		resource := row.Cells[1]
 		oc.Create(resource, store.Namespace())
+	}
+})
+
+var _ = gauge.Step("Create remote <table>", func(table *m.Table) {
+	for _, row := range table.Rows {
+		resource := row.Cells[1]
+		expr := regexp.MustCompile("{.+}")
+		matchedString := expr.FindString(resource)
+		if matchedString != "" {
+			envVariable := strings.Replace(matchedString, "{", "", 1)
+			envVariable = strings.Replace(envVariable, "}", "", 1)
+			resource = strings.Replace(resource, matchedString, os.Getenv(envVariable), 1)
+		}
+		oc.CreateRemote(resource, store.Namespace())
 	}
 })
 
@@ -134,7 +152,7 @@ var _ = gauge.Step("Create project <projectName>", func(projectName string) {
 
 var _ = gauge.Step("Delete project <projectName>", func(projectName string) {
 	log.Printf("Deleting project %v", projectName)
-	oc.DeleteProject(projectName)
+	oc.DeleteProjectIgnoreErors(projectName)
 })
 
 var _ = gauge.Step("Link secret <secret> to service account <sa>", func(secret, sa string) {
@@ -172,5 +190,21 @@ var _ = gauge.Step("Configure the bundles resolver", func() {
 })
 
 var _ = gauge.Step("Enable console plugin", func() {
+	openshiftVersion := openshift.GetOpenShiftVersion(store.Clients())
+	if openshiftVersion == "" {
+		testsuit.T.Errorf("Unknown version of OpenShift (cluster version \"%v\").", openshiftVersion)
+	}
+
+	minorVersion, err := strconv.Atoi(strings.Split(openshiftVersion, ".")[1])
+
+	if err != nil {
+		testsuit.T.Fail(err)
+	}
+
+	if minorVersion < 15 {
+		log.Printf("Console plugin is not supported on OpenShift version lower than 4.15 (cluster version %v).", openshiftVersion)
+		return
+	}
+
 	oc.EnableConsolePlugin()
 })

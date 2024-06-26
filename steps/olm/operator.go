@@ -34,7 +34,9 @@ var _ = gauge.Step("Subscribe to operator", func() {
 })
 
 var _ = gauge.Step("Wait for TektonConfig CR availability", func() {
-	operator.EnsureTektonConfigExists(store.Clients().TektonConfig(), store.GetCRNames())
+	if _, err := operator.EnsureTektonConfigExists(store.Clients().TektonConfig(), store.GetCRNames()); err != nil {
+		testsuit.T.Fail(fmt.Errorf("TektonConfig doesn't exists\n %v", err))
+	}
 })
 
 var _ = gauge.Step("Upgrade operator subscription", func() {
@@ -62,6 +64,10 @@ var _ = gauge.Step("Validate chains deployment", func() {
 
 var _ = gauge.Step("Validate hub deployment", func() {
 	operator.ValidateHubDeployments(store.Clients(), store.GetCRNames())
+})
+
+var _ = gauge.Step("Validate manual approval gate deployment", func() {
+	operator.ValidateManualApprovalGateDeployments(store.Clients(), store.GetCRNames())
 })
 
 var _ = gauge.Step("Uninstall Operator", func() {
@@ -168,10 +174,12 @@ var _ = gauge.Step("Create signing-secrets for Tekton Chains", func() {
 			log.Printf("The \"signing-secrets\" does not contain any data")
 			oc.DeleteResourceInNamespace("secrets", "signing-secrets", "openshift-pipelines")
 			operator.CreateSigningSecretForTektonChains()
-		} else {
-			operator.CreateFileWithCosignPubKey()
 		}
 	} else {
 		operator.CreateSigningSecretForTektonChains()
 	}
+})
+
+var _ = gauge.Step("Store Cosign public key in file", func() {
+	operator.CreateFileWithCosignPubKey()
 })

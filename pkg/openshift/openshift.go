@@ -1,6 +1,7 @@
 package openshift
 
 import (
+	"context"
 	"log"
 
 	"github.com/getgauge-contrib/gauge-go/testsuit"
@@ -31,7 +32,7 @@ func VerifyImageStreamExists(c *clients.Clients, name, namespace string) {
 	log.Printf("Verify that image stream %q exists in namespace %q", name, namespace)
 	is := imageStream.NewForConfigOrDie(c.KubeConfig)
 
-	if err := wait.PollImmediate(config.APIRetry, config.APITimeout, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(c.Ctx, config.APIRetry, config.APITimeout, true, func(context.Context) (bool, error) {
 		_, err := is.ImageV1().ImageStreams(namespace).Get(c.Ctx, name, metav1.GetOptions{})
 		if err != nil && errors.IsNotFound(err) {
 			return false, nil
@@ -54,4 +55,14 @@ func IsCapabilityEnabled(c *clients.Clients, name string) bool {
 		}
 	}
 	return false
+}
+
+func GetOpenShiftVersion(c *clients.Clients) string {
+	cv, err := c.ClusterVersion.Get(c.Ctx, "version", metav1.GetOptions{})
+	if err != nil {
+		testsuit.T.Fail(err)
+		return ""
+	}
+
+	return cv.Status.Desired.Version
 }
